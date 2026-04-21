@@ -1,0 +1,16 @@
+{
+  "characterId": "character_0",
+  "layers": {
+    "Body": 1,
+    "TattoosSkin": 0,
+    "Outfit": 1,
+    "ApparelMiddle": 0,
+    "Shell": 0,
+    "Head": 1,
+    "Facial": 1,
+    "Beard": 0,
+    "Hair": 1,
+    "Headgear": 0,
+    "Weapons": 0
+  }
+}

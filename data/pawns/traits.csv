@@ -1,0 +1,4 @@
+ID,Name,MoveSpeed,WorkSpeed
+1,FastWorker,1.2,1.5
+2,SlowPoke,0.8,0.7
+3,Standard,1.0,1.0

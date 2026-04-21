@@ -1,0 +1,3 @@
+ID,Name,HP,MaterialID,MaterialCost,BuildTime
+101,Wooden Wall,200,1001,5,10
+102,Stone Wall,500,1002,5,20

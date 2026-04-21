@@ -1,0 +1,81 @@
+{
+  "id": "character_1",
+  "views": {
+    "front": [
+      {
+        "layer": "Body",
+        "path": "assets/Pawn/front_body_01.png",
+        "z": 0.000
+      },
+      {
+        "layer": "Outfit",
+        "path": "assets/Pawn/front_outfit_01.png",
+        "z": 0.004
+      },
+      {
+        "layer": "Head",
+        "path": "assets/Pawn/front_head_01.png",
+        "z": 0.010
+      },
+      {
+        "layer": "Facial",
+        "path": "assets/Pawn/front_facial_01.png",
+        "z": 0.012
+      },
+      {
+        "layer": "Hair",
+        "path": "assets/Pawn/front_hair_01.png",
+        "z": 0.016
+      }
+    ],
+    "side": [
+      {
+        "layer": "Body",
+        "path": "assets/Pawn/side_body_01.png",
+        "z": 0.000
+      },
+      {
+        "layer": "Outfit",
+        "path": "assets/Pawn/side_outfit_01.png",
+        "z": 0.004
+      },
+      {
+        "layer": "Head",
+        "path": "assets/Pawn/side_head_01.png",
+        "z": 0.010
+      },
+      {
+        "layer": "Facial",
+        "path": "assets/Pawn/side_facial_01.png",
+        "z": 0.012
+      },
+      {
+        "layer": "Hair",
+        "path": "assets/Pawn/side_hair_01.png",
+        "z": 0.016
+      }
+    ],
+    "back": [
+      {
+        "layer": "Body",
+        "path": "assets/Pawn/back_body_01.png",
+        "z": 0.000
+      },
+      {
+        "layer": "Outfit",
+        "path": "assets/Pawn/back_outfit_01.png",
+        "z": 0.004
+      },
+      {
+        "layer": "Head",
+        "path": "assets/Pawn/back_head_01.png",
+        "z": 0.010
+      },
+      {
+        "layer": "Hair",
+        "path": "assets/Pawn/back_hair_01.png",
+        "z": 0.016
+      }
+    ]
+  }
+}

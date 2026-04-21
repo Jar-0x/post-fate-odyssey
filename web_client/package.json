@@ -1,0 +1,22 @@
+{
+  "name": "post-fate-odyssey-client",
+  "version": "1.0.0",
+  "description": "Post-fate Odyssey Frontend",
+  "scripts": {
+    "build:wasm": "cd ../core_sim && npx wasm-pack build --target web --out-dir ../web_client/src/wasm --out-name core_sim_bg",
+    "build": "npm run build:wasm && webpack --mode production",
+    "dev": "npm run build:wasm && webpack serve --mode development"
+  },
+  "dependencies": {
+    "pixi.js": "^7.3.2"
+  },
+  "devDependencies": {
+    "jimp": "^0.22.10",
+    "ts-loader": "^9.5.1",
+    "typescript": "^5.2.2",
+    "wasm-pack": "^0.14.0",
+    "webpack": "^5.89.0",
+    "webpack-cli": "^5.1.4",
+    "webpack-dev-server": "^4.15.1"
+  }
+}

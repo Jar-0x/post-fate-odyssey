@@ -1,0 +1,194 @@
+{
+  "frames": {
+    "dirt.png": {
+      "frame": {
+        "x": 0,
+        "y": 0,
+        "w": 1024,
+        "h": 1024
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 1024,
+        "h": 1024
+      },
+      "sourceSize": {
+        "w": 1024,
+        "h": 1024
+      }
+    },
+    "grass.png": {
+      "frame": {
+        "x": 1026,
+        "y": 0,
+        "w": 1024,
+        "h": 1024
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 1024,
+        "h": 1024
+      },
+      "sourceSize": {
+        "w": 1024,
+        "h": 1024
+      }
+    },
+    "stone.png": {
+      "frame": {
+        "x": 2052,
+        "y": 0,
+        "w": 1024,
+        "h": 1024
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 1024,
+        "h": 1024
+      },
+      "sourceSize": {
+        "w": 1024,
+        "h": 1024
+      }
+    },
+    "rock.png": {
+      "frame": {
+        "x": 3078,
+        "y": 0,
+        "w": 1024,
+        "h": 1024
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 1024,
+        "h": 1024
+      },
+      "sourceSize": {
+        "w": 1024,
+        "h": 1024
+      }
+    },
+    "tree.png": {
+      "frame": {
+        "x": 4104,
+        "y": 0,
+        "w": 1024,
+        "h": 1024
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 1024,
+        "h": 1024
+      },
+      "sourceSize": {
+        "w": 1024,
+        "h": 1024
+      }
+    },
+    "wall.png": {
+      "frame": {
+        "x": 5130,
+        "y": 0,
+        "w": 1024,
+        "h": 1024
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 1024,
+        "h": 1024
+      },
+      "sourceSize": {
+        "w": 1024,
+        "h": 1024
+      }
+    },
+    "food.png": {
+      "frame": {
+        "x": 6156,
+        "y": 0,
+        "w": 32,
+        "h": 32
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 32,
+        "h": 32
+      },
+      "sourceSize": {
+        "w": 32,
+        "h": 32
+      }
+    },
+    "white.png": {
+      "frame": {
+        "x": 6190,
+        "y": 0,
+        "w": 32,
+        "h": 32
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 32,
+        "h": 32
+      },
+      "sourceSize": {
+        "w": 32,
+        "h": 32
+      }
+    },
+    "circle.png": {
+      "frame": {
+        "x": 6224,
+        "y": 0,
+        "w": 32,
+        "h": 32
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 32,
+        "h": 32
+      },
+      "sourceSize": {
+        "w": 32,
+        "h": 32
+      }
+    }
+  },
+  "meta": {
+    "app": "PocketRimWorld Packer",
+    "image": "spritesheet.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 6258,
+      "h": 1024
+    },
+    "scale": "1"
+  }
+}

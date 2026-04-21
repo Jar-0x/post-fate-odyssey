@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Post-fate Odyssey</title>
+    <style>
+        body, html { margin: 0; padding: 0; width: 100vw; height: 100vh; overflow: hidden; background-color: #103040; font-family: 'Inter', Arial, sans-serif; color: #fff; user-select: none; -webkit-user-select: none; }
+        #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box; padding: 10px; }
+        .top-bar { pointer-events: auto; display: flex; gap: 10px; }
+        .bottom-bar { pointer-events: auto; display: flex; gap: 10px; background: rgba(10, 20, 30, 0.9); padding: 10px; border-radius: 8px; justify-content: center; align-items: center; box-shadow: 0 -4px 10px rgba(0,0,0,0.5); border: 1px solid #334455; flex-wrap: wrap; }
+        button { background: rgba(40, 60, 80, 0.8); border: 2px solid #557788; color: #fff; padding: 10px 15px; border-radius: 6px; font-size: 14px; font-weight: bold; cursor: pointer; backdrop-filter: blur(4px); transition: all 0.2s ease-in-out; }
+        button:active, .active-mode { transform: scale(0.95); background: #00ff99 !important; border-color: #00ff99 !important; color: #000 !important; }
+        .tab-btn { background: rgba(0,0,0,0.5); padding: 5px 10px; border-bottom: none; border-bottom-left-radius: 0; border-bottom-right-radius: 0; font-size:12px; }
+        .tab-btn.active-tab { background: rgba(40,60,80,0.9); color: #00ff99; }
+        #mode-indicator { font-size: 16px; font-weight: bold; color: #00ff99; margin-left: 20px; }
+        #status-msg { position: absolute; bottom: 80px; right: 20px; color: #00ff99; background: rgba(0,0,0,0.8); padding: 8px 12px; border-radius: 4px; font-size: 14px; opacity: 0; transition: opacity 0.5s; }
+        .btn-red { background: rgba(180, 50, 50, 0.8) !important; border-color: #ff5555 !important; }
+    </style>
+</head>
+<body>
+    <div id="ui-layer">
+        <div class="top-bar">
+            <button id="btn-save">Save Local</button>
+            <button id="btn-load">Load Local</button>
+        </div>
+
+        <div id="colonist-bar" style="position: absolute; top: 10px; left: 50%; transform: translateX(-50%); display: flex; gap: 10px; pointer-events: auto;">
+            <!-- Generated via ts -->
+        </div>
+
+        <div id="time-hud" style="position: absolute; right: 20px; bottom: 80px; background: rgba(0,0,0,0.7); padding: 5px 10px; border-radius: 8px; border: 1px solid #557788; display:flex; gap: 10px; align-items:center; pointer-events:auto;">
+            <span id="time-display" style="font-size:16px; font-weight:bold; color:#00ff99; min-width: 110px;">Day 1 - 00:00</span>
+            <button id="btn-speed-0" class="speed-btn active-mode">||</button>
+            <button id="btn-speed-1" class="speed-btn">&gt;</button>
+            <button id="btn-speed-2" class="speed-btn">&gt;&gt;</button>
+            <button id="btn-speed-4" class="speed-btn">&gt;&gt;&gt;</button>
+        </div>
+        
+        <div id="wealth-hud" style="pointer-events: none; position: absolute; left: 10px; top: 60px; background: rgba(0,0,0,0.7); padding: 10px; border-radius: 8px; border: 1px solid #557788; min-width: 150px;">
+            <div style="font-size:18px; border-bottom: 1px solid #557788; padding-bottom: 5px; margin-bottom: 5px; font-weight:bold; color:#00ff99;">COLONY WEALTH</div>
+            <div>🪵 Wood: <span id="val-wood">0</span></div>
+            <div style="margin-top:5px;">🪨 Stone Chunks: <span id="val-stone">0</span></div>
+        </div>
+        
+        <div id="status-msg">State Saved!</div>
+        
+        <div id="pawn-inspect-panel" style="pointer-events: auto; position: absolute; left: 10px; bottom: 80px; background: rgba(20,30,40,0.95); border-radius: 8px; border: 1px solid #557788; min-width: 300px; display: none; overflow:hidden;">
+            <div style="display:flex; justify-content:space-between; align-items:center; background: rgba(0,0,0,0.8); padding: 10px; border-bottom: 1px solid #557788;">
+                <span id="pawn-name" style="font-size:18px; font-weight:bold; color:#00ccff;">Target Pawn</span>
+                <button id="btn-close-inspect" style="padding: 2px 6px; font-size: 12px; border: 1px solid #557788; background: transparent;">X</button>
+            </div>
+            
+            <div style="display:flex; border-bottom: 1px solid #334455; padding-left:10px;">
+                <button id="tab-bio" class="tab-btn active-tab">Bio</button>
+                <button id="tab-needs" class="tab-btn">Needs</button>
+            </div>
+
+            <div id="sub-bio" style="padding: 10px; font-size:14px; min-height: 120px; display:block;">
+                <div style="color: #aaa; margin-bottom: 5px;"><span id="bio-gender">Male</span>, Age <span id="bio-age">30</span></div>
+                <div style="margin-bottom: 5px;"><strong>Traits:</strong> <span id="bio-traits" style="color: #ffaa00">None</span></div>
+                <div style="margin-bottom: 10px;"><strong>Incapable:</strong> <span id="bio-incapable" style="color: #ff5555">None</span></div>
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:5px;">
+                    <div>Shooting: <span id="sk-shooting">0</span></div>
+                    <div>Melee: <span id="sk-melee">0</span></div>
+                    <div>Mining: <span id="sk-mining">0</span></div>
+                    <div>Construction: <span id="sk-construction">0</span></div>
+                    <div>Cooking: <span id="sk-cooking">0</span></div>
+                    <div>Plants: <span id="sk-plants">0</span></div>
+                </div>
+            </div>
+
+            <div id="sub-needs" style="padding: 10px; font-size:14px; min-height: 120px; display:none;">
+                <div style="margin-bottom: 10px;">💼 Current Job: <br><strong id="pawn-job" style="color: #ffff00;">Idle</strong></div>
+                <div style="margin-bottom: 5px;">❤️ Health: <span id="pawn-hp">100</span>/<span id="pawn-max-hp">100</span></div>
+                <div style="background:#222; width:100%; height:8px; border-radius:4px; margin-bottom: 10px;"><div id="bar-hp" style="height:100%; width:100%; background:#ff5555; border-radius:4px;"></div></div>
+
+                <div style="margin-bottom: 5px;">🍖 Hunger: <span id="pawn-hunger">100</span>/<span id="pawn-max-hunger">100</span></div>
+                <div style="background:#222; width:100%; height:8px; border-radius:4px;"><div id="bar-hunger" style="height:100%; width:100%; background:#00ff99; border-radius:4px;"></div></div>
+            </div>
+        </div>
+
+        <!-- Floating Context Menu -->
+        <div id="context-menu" style="display:none; position:absolute; background: #223344; border: 1px solid #fff; border-radius:4px; padding: 5px; pointer-events:auto; z-index:1000; flex-direction:column; min-width: 120px;">
+            <button id="ctx-prioritize" style="width: 100%; padding: 8px; text-align: left; background:transparent; border:none; color:#fff; border-radius:0;">Prioritize Work</button>
+            <button id="ctx-cancel" style="width: 100%; padding: 8px; text-align: left; background:transparent; border:none; color:#faa; border-radius:0;">Cancel</button>
+        </div>
+
+        <div class="bottom-bar">
+            <button id="btn-cancel" class="action-btn btn-red">❌ Cancel Tool</button>
+            <button id="btn-chop" class="action-btn">🪓 Chop Wood</button>
+            <button id="btn-mine" class="action-btn">⛏️ Mine Rock</button>
+            <button id="btn-build-wall" class="action-btn">🧱 Build Wall</button>
+            <button id="btn-zone" class="action-btn">🟦 Zone Stockpile</button>
+            <button id="btn-cancel-zone" class="action-btn btn-red">🚫 Cancel Zone</button>
+            <div id="mode-indicator">Mode: SELECT</div>
+        </div>
+    </div>
+    <script src="bundle.js"></script>
+</body>
+</html>

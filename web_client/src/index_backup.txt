@@ -1,0 +1,432 @@
+﻿import * as PIXI from 'pixi.js';
+import initWasm, { Engine } from './wasm/core_sim_bg';
+
+const TILE_SIZE = 32;
+
+enum UIMode {
+    SELECT,
+    CHOP_WOOD,
+    MINE_ROCK,
+    BUILD_WALL,
+    ZONE_STOCKPILE
+}
+
+const main = async () => {
+    const app = new PIXI.Application({ width: window.innerWidth, height: window.innerHeight, backgroundColor: 0x050510, resolution: window.devicePixelRatio || 1 });
+    document.body.appendChild(app.view as HTMLCanvasElement);
+
+    PIXI.Assets.add('spritesheet', 'assets/spritesheet.json');
+    const sheet = await PIXI.Assets.load('spritesheet');
+    const textures = sheet.textures;
+
+    await initWasm();
+    const engine = new Engine();
+
+    const worldContainer = new PIXI.Container();
+    app.stage.addChild(worldContainer);
+
+    const backgroundLayer = new PIXI.ParticleContainer(100000, { vertices: true, position: true, rotation: false, uvs: true, tint: true }); 
+    worldContainer.addChild(backgroundLayer);
+    
+    // Transparent blue zone overlays
+    const zoneLayer = new PIXI.Graphics();
+    worldContainer.addChild(zoneLayer);
+    
+    const entityLayer = new PIXI.Container();
+    worldContainer.addChild(entityLayer);
+    
+    // Green selection box overlay
+    const uiLayer = new PIXI.Graphics();
+    worldContainer.addChild(uiLayer);
+
+    const screenOverlay = new PIXI.Graphics();
+    screenOverlay.blendMode = PIXI.BLEND_MODES.MULTIPLY;
+    app.stage.addChild(screenOverlay);
+
+    const spriteCache = new Map<number, PIXI.Container>();
+    
+    const interpolateColor = (color1: number, color2: number, factor: number) => {
+        const r1 = (color1 >> 16) & 0xff, g1 = (color1 >> 8) & 0xff, b1 = color1 & 0xff;
+        const r2 = (color2 >> 16) & 0xff, g2 = (color2 >> 8) & 0xff, b2 = color2 & 0xff;
+        const r = Math.round(r1 + factor * (r2 - r1));
+        const g = Math.round(g1 + factor * (g2 - g1));
+        const b = Math.round(b1 + factor * (b2 - b1));
+        return (r << 16) | (g << 8) | b;
+    };
+
+    let selectedPawnId: number | null = null;
+    document.getElementById('btn-close-inspect')?.addEventListener('click', () => {
+        selectedPawnId = null;
+        document.getElementById('pawn-inspect-panel')!.style.display = 'none';
+        spriteCache.forEach(w => { const s = w.getChildByName("pawn-select-box"); if (s) s.visible = false; });
+    });
+
+    const updateSpeeds = (activeBtnId: string, speed: number) => {
+        document.querySelectorAll('.speed-btn').forEach(b => b.classList.remove('active-mode'));
+        document.getElementById(activeBtnId)?.classList.add('active-mode');
+        engine.set_time_scale(speed);
+    };
+    document.getElementById('btn-speed-0')?.addEventListener('click', () => updateSpeeds('btn-speed-0', 0.0));
+    document.getElementById('btn-speed-1')?.addEventListener('click', () => updateSpeeds('btn-speed-1', 1.0));
+    document.getElementById('btn-speed-2')?.addEventListener('click', () => updateSpeeds('btn-speed-2', 2.0));
+    document.getElementById('btn-speed-4')?.addEventListener('click', () => updateSpeeds('btn-speed-4', 4.0));
+
+    let currentMode = UIMode.SELECT;
+    const setMode = (mode: UIMode, text: string) => {
+        currentMode = mode;
+        document.getElementById('mode-indicator')!.innerText = `Mode: ${text}`;
+        document.querySelectorAll('.action-btn').forEach(b => b.classList.remove('active-mode'));
+    };
+
+    document.getElementById('btn-cancel')?.addEventListener('click', () => setMode(UIMode.SELECT, 'SELECT'));
+    document.getElementById('btn-chop')?.addEventListener('click', (e) => { (e.currentTarget as HTMLElement).classList.add('active-mode'); setMode(UIMode.CHOP_WOOD, 'CHOP WOOD'); });
+    document.getElementById('btn-mine')?.addEventListener('click', (e) => { (e.currentTarget as HTMLElement).classList.add('active-mode'); setMode(UIMode.MINE_ROCK, 'MINE ROCK'); });
+    document.getElementById('btn-build')?.addEventListener('click', (e) => { (e.currentTarget as HTMLElement).classList.add('active-mode'); setMode(UIMode.BUILD_WALL, 'BUILD WALL'); });
+    document.getElementById('btn-zone')?.addEventListener('click', (e) => { (e.currentTarget as HTMLElement).classList.add('active-mode'); setMode(UIMode.ZONE_STOCKPILE, 'ZONE STOCKPILE'); });
+    document.getElementById('btn-build-wall')?.addEventListener('click', (e) => { (e.currentTarget as HTMLElement).classList.add('active-mode'); setMode(UIMode.BUILD_WALL, 'BUILD WALL'); });
+
+
+    // Input Variables
+    let isDraggingSelection = false;
+    let isRightClickPanning = false;
+    let dragStartPointGlobal = { x: 0, y: 0 };
+    let dragStartPointLocal = { x: 0, y: 0 };
+    let panStartPoint = { x: 0, y: 0 };
+
+    app.stage.eventMode = 'static';
+    app.stage.hitArea = new PIXI.Rectangle(0, 0, window.innerWidth, window.innerHeight);
+
+    // Disable default browser context menu for right click
+    document.body.addEventListener('contextmenu', e => e.preventDefault());
+
+    app.stage.on('pointerdown', (e) => {
+        if (e.button === 2) { // Right Click = Pan
+            isRightClickPanning = true;
+            panStartPoint = { x: e.global.x, y: e.global.y };
+            setMode(UIMode.SELECT, 'SELECT'); 
+            return;
+        }
+
+        // Left click = Drag Select 
+        isDraggingSelection = true;
+        dragStartPointGlobal = { x: e.global.x, y: e.global.y };
+        dragStartPointLocal = worldContainer.toLocal(e.global);
+    });
+
+    app.stage.on('pointermove', (e) => {
+        if (isRightClickPanning) {
+            const dx = e.global.x - panStartPoint.x;
+            const dy = e.global.y - panStartPoint.y;
+            worldContainer.x += dx;
+            worldContainer.y += dy;
+            panStartPoint = { x: e.global.x, y: e.global.y };
+            return;
+        }
+
+        if (isDraggingSelection) {
+            uiLayer.clear();
+            if (currentMode !== UIMode.SELECT) {
+                const currentLocal = worldContainer.toLocal(e.global);
+                const rectX = Math.min(dragStartPointLocal.x, currentLocal.x);
+                const rectY = Math.min(dragStartPointLocal.y, currentLocal.y);
+                const rectW = Math.abs(currentLocal.x - dragStartPointLocal.x);
+                const rectH = Math.abs(currentLocal.y - dragStartPointLocal.y);
+
+                uiLayer.beginFill(0x00ff00, 0.2);
+                uiLayer.lineStyle(2, 0x00ff00, 0.8);
+                uiLayer.drawRect(rectX, rectY, rectW, rectH);
+                uiLayer.endFill();
+            }
+        }
+    });
+
+    app.stage.on('pointerup', (e) => {
+        if (e.button === 2) {
+            isRightClickPanning = false;
+            return;
+        }
+
+        if (isDraggingSelection) {
+            isDraggingSelection = false;
+            uiLayer.clear();
+
+            const currentLocal = worldContainer.toLocal(e.global);
+            const minX = Math.floor(Math.min(dragStartPointLocal.x, currentLocal.x) / TILE_SIZE);
+            const maxX = Math.floor(Math.max(dragStartPointLocal.x, currentLocal.x) / TILE_SIZE);
+            const minY = Math.floor(Math.min(dragStartPointLocal.y, currentLocal.y) / TILE_SIZE);
+            const maxY = Math.floor(Math.max(dragStartPointLocal.y, currentLocal.y) / TILE_SIZE);
+
+            if (currentMode === UIMode.CHOP_WOOD) engine.command_batch_chop(minX, minY, maxX, maxY);
+            if (currentMode === UIMode.MINE_ROCK) engine.command_batch_mine(minX, minY, maxX, maxY);
+            if (currentMode === UIMode.ZONE_STOCKPILE) engine.command_create_stockpile(minX, minY, maxX, maxY);
+            if (currentMode === UIMode.BUILD_WALL) engine.command_build_wall(minX, minY);
+            // Tool persists!
+        }
+    });
+    
+    app.stage.on('pointerupoutside', () => { isDraggingSelection = false; isRightClickPanning = false; uiLayer.clear(); });
+
+    document.body.addEventListener('wheel', (e) => {
+        const zoomDelta = e.deltaY > 0 ? 0.9 : 1.1;
+        const newScale = worldContainer.scale.x * zoomDelta;
+        if (newScale >= 0.3 && newScale <= 3.0) {
+            const pointerX = e.clientX; const pointerY = e.clientY;
+            const worldPos = { x: (pointerX - worldContainer.x) / worldContainer.scale.x, y: (pointerY - worldContainer.y) / worldContainer.scale.y };
+            worldContainer.scale.set(newScale, newScale);
+            worldContainer.x = pointerX - worldPos.x * newScale; worldContainer.y = pointerY - worldPos.y * newScale;
+        }
+    }, {passive: true});
+
+    worldContainer.x = window.innerWidth / 2 - (25 * TILE_SIZE);
+    worldContainer.y = window.innerHeight / 2 - (25 * TILE_SIZE);
+
+    let timeAccumulator = 0;
+    const TICK_RATE = 1000 / 10; 
+    let mapDrawn = false;
+
+    // Helper for Edge shadow calculation
+    const isStone = (tiles: Float32Array, offset: number, w: number, h: number, x: number, y: number) => {
+        if (x < 0 || x >= w || y < 0 || y >= h) return true; // Treat edges of map as solid
+        return tiles[offset + y * w + x] === 2;
+    };
+
+    app.ticker.add(() => {
+        timeAccumulator += app.ticker.elapsedMS;
+
+        if (timeAccumulator >= TICK_RATE) {
+            engine.tick(TICK_RATE / 1000.0);
+            timeAccumulator -= TICK_RATE;
+            
+            const floatArr = engine.get_render_buffer();
+            const globalTime = floatArr[0];
+            const width = floatArr[1];
+            const height = floatArr[2];
+            
+            const numTiles = width * height;
+            const tilesOffset = 3;
+            const zonesOffset = 3 + numTiles;
+            
+            const day = Math.floor(globalTime / 24) + 1;
+            const hourFloat = globalTime % 24;
+            const hour = Math.floor(hourFloat);
+            const minute = Math.floor((hourFloat - hour) * 60);
+            const timeStr = `Day ${day} - ${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
+            document.getElementById('time-display')!.innerText = timeStr;
+
+            let color = 0xFFFFFF;
+            if (hourFloat < 4 || hourFloat > 20) {
+                color = 0x333366; 
+            } else if (hourFloat >= 4 && hourFloat < 8) {
+                color = interpolateColor(0x333366, 0xFFFFFF, (hourFloat - 4) / 4.0);
+            } else if (hourFloat >= 16 && hourFloat <= 20) {
+                color = interpolateColor(0xFFFFFF, 0x333366, (hourFloat - 16) / 4.0);
+            }
+            screenOverlay.clear();
+            screenOverlay.beginFill(color);
+            screenOverlay.drawRect(0, 0, window.innerWidth, window.innerHeight);
+            screenOverlay.endFill();
+            
+            if (!mapDrawn) {
+                backgroundLayer.removeChildren();
+                for (let y = 0; y < height; y++) {
+                    for (let x = 0; x < width; x++) {
+                        const tileID = floatArr[tilesOffset + y * width + x];
+                        let tex = textures['grass.png'];
+                        if (tileID === 1) tex = textures['dirt.png'];
+                        if (tileID === 2) tex = textures['stone.png'];
+
+                        const tileSprite = new PIXI.Sprite(tex);
+                        tileSprite.width = TILE_SIZE; tileSprite.height = TILE_SIZE;
+                        tileSprite.x = x * TILE_SIZE; tileSprite.y = y * TILE_SIZE;
+                        backgroundLayer.addChild(tileSprite);
+
+                        // Pseudo-Autotiling edge Shadows for mountains (Stone)
+                        if (tileID === 2) {
+                            const isBottomAir = !isStone(floatArr, tilesOffset, width, height, x, y + 1);
+                            if (isBottomAir) {
+                                const shadow = new PIXI.Sprite(textures['white.png']);
+                                shadow.tint = 0x000000;
+                                shadow.alpha = 0.4;
+                                shadow.x = x * TILE_SIZE;
+                                shadow.y = y * TILE_SIZE + TILE_SIZE - 4;
+                                shadow.width = TILE_SIZE;
+                                shadow.height = 8;
+                                backgroundLayer.addChild(shadow);
+                            }
+                        }
+                    }
+                }
+                mapDrawn = true;
+            }
+
+            // Sync Zones recursively
+            zoneLayer.clear();
+            zoneLayer.beginFill(0x0088ff, 0.3); // Stockpile blue
+            zoneLayer.lineStyle(1, 0x00aaff, 0.5);
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    if (floatArr[zonesOffset + y * width + x] === 1) {
+                         zoneLayer.drawRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+                    }
+                }
+            }
+            zoneLayer.endFill();
+
+            // Offset jumping over tiles and zones
+            let offset = zonesOffset + numTiles;
+            const activeIds = new Set<number>();
+            
+            // Pawns
+            const numPawns = floatArr[offset++];
+            for(let i = 0; i < numPawns; i++) {
+                const id = floatArr[offset++]; const spriteId = floatArr[offset++];
+                const px = floatArr[offset++]; const py = floatArr[offset++];
+                activeIds.add(id);
+
+                let wrapper = spriteCache.get(id);
+                if (!wrapper) {
+                    wrapper = new PIXI.Container();
+                    const ctx = new PIXI.Sprite(textures['circle.png']);
+                    ctx.tint = spriteId === 101 ? 0xff00cc : 0x00ccff; 
+                    ctx.width = TILE_SIZE; ctx.height = TILE_SIZE;
+                    
+                    ctx.eventMode = 'static';
+                    ctx.cursor = 'pointer';
+                    ctx.on('pointerdown', (e) => {
+                        if (currentMode === UIMode.SELECT) {
+                            selectedPawnId = id;
+                            document.getElementById('pawn-inspect-panel')!.style.display = 'block';
+                            e.stopPropagation();
+                        }
+                    });
+
+                    wrapper.addChild(ctx);
+                    
+                    const sel = new PIXI.Graphics();
+                    sel.lineStyle(2, 0xffffff);
+                    sel.drawRect(0, 0, TILE_SIZE, TILE_SIZE);
+                    sel.visible = false;
+                    sel.name = "pawn-select-box";
+                    wrapper.addChild(sel);
+
+                    entityLayer.addChild(wrapper);
+                    spriteCache.set(id, wrapper);
+                }
+                
+                const sel = wrapper.getChildByName("pawn-select-box") as PIXI.Graphics;
+                if (sel) sel.visible = (selectedPawnId === id);
+
+                wrapper.x = px * TILE_SIZE; wrapper.y = py * TILE_SIZE;
+            }
+
+            // Statics
+            const numStatics = floatArr[offset++];
+            let globalWood = 0;
+            let globalStone = 0;
+
+            for(let i = 0; i < numStatics; i++) {
+                const id = floatArr[offset++]; const staticType = floatArr[offset++]; 
+                const px = floatArr[offset++]; const py = floatArr[offset++];
+                activeIds.add(id);
+
+                // Inventory Calculation (Must be inside Zones)
+                if (staticType === 301 || staticType === 302) {
+                    const zx = Math.round(px); const zy = Math.round(py);
+                    if (zx >= 0 && zx < width && zy >= 0 && zy < height) {
+                        if (floatArr[zonesOffset + zy * width + zx] === 1) {
+                            if (staticType === 301) globalWood += 1;
+                            if (staticType === 302) globalStone += 1;
+                        }
+                    }
+                }
+
+                let wrapper = spriteCache.get(id);
+                if (!wrapper) {
+                    wrapper = new PIXI.Container();
+                    if (staticType === 201 || staticType === 205) { 
+                        let s = new PIXI.Sprite(textures['tree.png']);
+                        s.width = TILE_SIZE; s.height = TILE_SIZE; // Fixed 1x1 blocky
+                        wrapper.addChild(s);
+                    } else if (staticType === 202 || staticType === 206) { 
+                        let s = new PIXI.Sprite(textures['rock.png']);
+                        s.width = TILE_SIZE; s.height = TILE_SIZE;
+                        wrapper.addChild(s);
+                    } else if (staticType === 401) { 
+                        let s = new PIXI.Sprite(textures['wall.png']);
+                        s.width = TILE_SIZE; s.height = TILE_SIZE;
+                        wrapper.addChild(s);
+                    } else if (staticType === 301) { 
+                        let s = new PIXI.Sprite(textures['white.png']); s.tint = 0xd2b48c;
+                        s.width = TILE_SIZE/2; s.height = TILE_SIZE/4;
+                        s.x = TILE_SIZE/4; s.y = TILE_SIZE/2;
+                        wrapper.addChild(s);
+                    } else if (staticType === 302) { 
+                        let s = new PIXI.Sprite(textures['rock.png']);
+                        s.width = TILE_SIZE/1.5; s.height = TILE_SIZE/1.5;
+                        s.x = TILE_SIZE/6; s.y = TILE_SIZE/6;
+                        wrapper.addChild(s);
+                    } else if (staticType === 303) {
+                        let s = new PIXI.Sprite(textures['food.png']);
+                        s.width = TILE_SIZE/1.5; s.height = TILE_SIZE/1.5;
+                        s.x = TILE_SIZE/6; s.y = TILE_SIZE/6;
+                        wrapper.addChild(s);
+                    }
+                    
+                    // The Visual Indicator System (Yellow Target Marked_For_Job)
+                    const indicator = new PIXI.Sprite(textures['white.png']);
+                    indicator.name = "indicator";
+                    indicator.visible = false;
+                    indicator.width = TILE_SIZE; indicator.height = TILE_SIZE;
+                    wrapper.addChild(indicator);
+
+                    entityLayer.addChild(wrapper);
+                    spriteCache.set(id, wrapper);
+                }
+
+                // Update visual marked indicator dynamically
+                const indicator = wrapper.getChildByName("indicator") as PIXI.Sprite;
+                if (staticType === 205 || staticType === 206) { // Marked states
+                    indicator.tint = 0xffff00;
+                    indicator.alpha = 0.4;
+                    indicator.visible = true;
+                } else {
+                    indicator.visible = false;
+                }
+
+                wrapper.x = px * TILE_SIZE; wrapper.y = py * TILE_SIZE;
+            }
+
+            // Sync Inventory HUD
+            const elWood = document.getElementById('val-wood');
+            const elStone = document.getElementById('val-stone');
+            if (elWood) elWood.innerText = globalWood.toString();
+            if (elStone) elStone.innerText = globalStone.toString();
+
+            if (selectedPawnId !== null) {
+                const infoStr = engine.get_pawn_info(selectedPawnId);
+                if (infoStr !== "{}") {
+                    const info = JSON.parse(infoStr);
+                    document.getElementById('pawn-hp')!.innerText = Math.round(info.hp).toString();
+                    document.getElementById('pawn-max-hp')!.innerText = Math.round(info.max_hp).toString();
+                    document.getElementById('pawn-hunger')!.innerText = Math.round(info.hunger).toString();
+                    document.getElementById('pawn-max-hunger')!.innerText = Math.round(info.max_hunger).toString();
+                    document.getElementById('pawn-job')!.innerText = info.job;
+                } else {
+                    selectedPawnId = null;
+                    document.getElementById('pawn-inspect-panel')!.style.display = 'none';
+                }
+            }
+
+            spriteCache.forEach((wrapper, id) => {
+                if (!activeIds.has(id)) {
+                    entityLayer.removeChild(wrapper);
+                    wrapper.destroy({ children: true });
+                    spriteCache.delete(id);
+                }
+            });
+        }
+    });
+
+    window.addEventListener('resize', () => { app.renderer.resize(window.innerWidth, window.innerHeight); app.stage.hitArea = new PIXI.Rectangle(0, 0, window.innerWidth, window.innerHeight); });
+};
+main().catch(console.error);
