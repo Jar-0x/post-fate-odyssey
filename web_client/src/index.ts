@@ -167,123 +167,189 @@ const main = async () => {
     let dragStartPointLocal = { x: 0, y: 0 };
     let panStartPoint = { x: 0, y: 0 };
 
-    app.stage.eventMode = 'static';
-    app.stage.hitArea = new PIXI.Rectangle(0, 0, window.innerWidth, window.innerHeight);
+    app.stage.eventMode = 'none';
 
     document.body.addEventListener('contextmenu', e => e.preventDefault());
 
-    app.stage.on('pointerdown', (e) => {
-        document.getElementById('context-menu')!.style.display = 'none';
+    // Prevent default browser touch actions
+    document.addEventListener('touchstart', e => { if(e.touches.length > 1) e.preventDefault(); }, { passive: false });
+    document.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
 
-        if (e.button === 2) { // Right Click = Pan (drag) or Context Menu (tap)
-            isRightClickPanning = true;
-            rightClickMoved = false;
-            rightClickStart = { x: e.global.x, y: e.global.y };
-            panStartPoint = { x: e.global.x, y: e.global.y };
-            return;
-        } else if (e.button === 0) {
-            isDraggingSelection = true;
-            dragStartPointGlobal = { x: e.global.x, y: e.global.y };
-            dragStartPointLocal = worldContainer.toLocal(e.global);
+    let isPinching = false;
+    let initialPinchDist = 0;
+    let initialScale = 1;
+    let singleTouchStart = { x: 0, y: 0 };
+    let longPressTimeout: number | null = null;
+    let hasMovedDuringTouch = false;
+    let touchPanStartPoint = { x: 0, y: 0 };
+    let isSingleTouchPanning = false;
+
+    // Desktop/Mouse compatibility fallback
+    let isMouseDown = false;
+    document.addEventListener('mousedown', (e) => {
+        isMouseDown = true;
+        singleTouchStart = { x: e.clientX, y: e.clientY };
+        touchPanStartPoint = { x: e.clientX, y: e.clientY };
+        hasMovedDuringTouch = false;
+        isSingleTouchPanning = true;
+
+        if (longPressTimeout) clearTimeout(longPressTimeout);
+        longPressTimeout = window.setTimeout(() => {
+            if (!hasMovedDuringTouch && e.button === 2) {
+                handleLongPress(e.clientX, e.clientY);
+            }
+        }, 500);
+    });
+    document.addEventListener('mousemove', (e) => {
+        if (!isMouseDown) return;
+        const dx = e.clientX - singleTouchStart.x;
+        const dy = e.clientY - singleTouchStart.y;
+        if (Math.abs(dx) > 5 || Math.abs(dy) > 5) hasMovedDuringTouch = true;
+
+        if (hasMovedDuringTouch && isSingleTouchPanning) {
+            worldContainer.x += (e.clientX - touchPanStartPoint.x);
+            worldContainer.y += (e.clientY - touchPanStartPoint.y);
+            touchPanStartPoint = { x: e.clientX, y: e.clientY };
+            if (longPressTimeout) { clearTimeout(longPressTimeout); longPressTimeout = null; }
         }
     });
-
-    app.stage.on('pointermove', (e) => {
-        if (isRightClickPanning) {
-            const dx = e.global.x - panStartPoint.x;
-            const dy = e.global.y - panStartPoint.y;
-            if (Math.abs(dx) > 3 || Math.abs(dy) > 3) rightClickMoved = true;
-            worldContainer.x += dx;
-            worldContainer.y += dy;
-            panStartPoint = { x: e.global.x, y: e.global.y };
-            return;
-        }
-
-        if (isDraggingSelection) {
-            uiLayer.clear();
-            const currentLocal = worldContainer.toLocal(e.global);
-            const rectX = Math.min(dragStartPointLocal.x, currentLocal.x);
-            const rectY = Math.min(dragStartPointLocal.y, currentLocal.y);
-            const rectW = Math.abs(currentLocal.x - dragStartPointLocal.x);
-            const rectH = Math.abs(currentLocal.y - dragStartPointLocal.y);
-
-            uiLayer.beginFill(0x00ff00, 0.2);
-            uiLayer.lineStyle(2, 0x00ff00, 0.8);
-            uiLayer.drawRect(rectX, rectY, rectW, rectH);
-            uiLayer.endFill();
-        }
+    document.addEventListener('mouseup', (e) => {
+        isMouseDown = false;
+        isSingleTouchPanning = false;
+        if (longPressTimeout) { clearTimeout(longPressTimeout); longPressTimeout = null; }
+        if (!hasMovedDuringTouch && e.button !== 2) handleTap(e.clientX, e.clientY);
     });
 
-    app.stage.on('pointerup', (e) => {
-        if (e.button === 2) {
-            isRightClickPanning = false;
-            // If it was a tap (not a drag), don't do anything here — context menu is handled on entities
-            return;
+    document.addEventListener('touchstart', (e) => {
+        if (e.touches.length === 1) {
+            isPinching = false;
+            singleTouchStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+            touchPanStartPoint = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+            hasMovedDuringTouch = false;
+            isSingleTouchPanning = true;
+
+            if (longPressTimeout) clearTimeout(longPressTimeout);
+            longPressTimeout = window.setTimeout(() => {
+                if (!hasMovedDuringTouch) {
+                    handleLongPress(e.touches[0].clientX, e.touches[0].clientY);
+                }
+            }, 500);
+        } else if (e.touches.length === 2) {
+            isPinching = true;
+            isSingleTouchPanning = false;
+            if (longPressTimeout) { clearTimeout(longPressTimeout); longPressTimeout = null; }
+            const dx = e.touches[0].clientX - e.touches[1].clientX;
+            const dy = e.touches[0].clientY - e.touches[1].clientY;
+            initialPinchDist = Math.sqrt(dx * dx + dy * dy);
+            initialScale = worldContainer.scale.x;
         }
+    }, { passive: false });
 
-        if (isDraggingSelection) {
-            isDraggingSelection = false;
-            uiLayer.clear();
+    document.addEventListener('touchmove', (e) => {
+        if (isPinching && e.touches.length === 2) {
+            const dx = e.touches[0].clientX - e.touches[1].clientX;
+            const dy = e.touches[0].clientY - e.touches[1].clientY;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            const scaleFactor = dist / initialPinchDist;
+            let newScale = initialScale * scaleFactor;
+            newScale = Math.max(0.3, Math.min(newScale, 3.0));
+            
+            const centerX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+            const centerY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+            
+            const worldPos = { x: (centerX - worldContainer.x) / worldContainer.scale.x, y: (centerY - worldContainer.y) / worldContainer.scale.y };
+            worldContainer.scale.set(newScale, newScale);
+            worldContainer.x = centerX - worldPos.x * newScale;
+            worldContainer.y = centerY - worldPos.y * newScale;
+        } else if (e.touches.length === 1 && isSingleTouchPanning) {
+            const dx = e.touches[0].clientX - singleTouchStart.x;
+            const dy = e.touches[0].clientY - singleTouchStart.y;
+            if (Math.abs(dx) > 5 || Math.abs(dy) > 5) hasMovedDuringTouch = true;
 
-            const currentLocal = worldContainer.toLocal(e.global);
-            const minX = Math.floor(Math.min(dragStartPointLocal.x, currentLocal.x) / TILE_SIZE);
-            const maxX = Math.floor(Math.max(dragStartPointLocal.x, currentLocal.x) / TILE_SIZE);
-            const minY = Math.floor(Math.min(dragStartPointLocal.y, currentLocal.y) / TILE_SIZE);
-            const maxY = Math.floor(Math.max(dragStartPointLocal.y, currentLocal.y) / TILE_SIZE);
-
-            if (currentMode === UIMode.SELECT) {
-                if (!e.shiftKey) selectedPawnIds.clear();
-                let newlySelected = 0;
-                spriteCache.forEach((wrapper, id) => {
-                    if (id < 1000) {
-                        const px = wrapper.x + TILE_SIZE/2; const py = wrapper.y + TILE_SIZE/2;
-                        const rX1 = Math.min(dragStartPointLocal.x, currentLocal.x);
-                        const rX2 = Math.max(dragStartPointLocal.x, currentLocal.x);
-                        const rY1 = Math.min(dragStartPointLocal.y, currentLocal.y);
-                        const rY2 = Math.max(dragStartPointLocal.y, currentLocal.y);
-                        if (px > rX1 && px < rX2 && py > rY1 && py < rY2) {
-                            selectedPawnIds.add(id);
-                            newlySelected++;
-                        }
-                    }
-                });
-                
-                if (newlySelected === 0 && Math.abs(dragStartPointLocal.x - currentLocal.x) < 5) selectedPawnIds.clear();
-                
-                if (selectedPawnIds.size > 0) document.getElementById('pawn-inspect-panel')!.style.display = 'block';
-                else document.getElementById('pawn-inspect-panel')!.style.display = 'none';
-
-            } else {
-                if (currentMode === UIMode.CHOP_WOOD) engine.command_batch_chop(minX, minY, maxX, maxY);
-                if (currentMode === UIMode.MINE_ROCK) engine.command_batch_mine(minX, minY, maxX, maxY);
-                if (currentMode === UIMode.ZONE_STOCKPILE) engine.command_create_stockpile(minX, minY, maxX, maxY);
-                if (currentMode === UIMode.CANCEL_STOCKPILE) engine.command_cancel_stockpile(minX, minY, maxX, maxY);
-                if (currentMode === UIMode.BUILD_WALL) engine.command_build_wall(minX, minY);
+            if (hasMovedDuringTouch) {
+                worldContainer.x += (e.touches[0].clientX - touchPanStartPoint.x);
+                worldContainer.y += (e.touches[0].clientY - touchPanStartPoint.y);
+                touchPanStartPoint = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+                if (longPressTimeout) { clearTimeout(longPressTimeout); longPressTimeout = null; }
             }
         }
-    });
-    
-    app.stage.on('pointerupoutside', () => { isDraggingSelection = false; isRightClickPanning = false; uiLayer.clear(); });
+    }, { passive: false });
 
-    // WASD Keyboard Camera Panning
-    document.addEventListener('keydown', (e) => {
-        const panSpeed = 30;
-        if (e.key === 'w' || e.key === 'W') worldContainer.y += panSpeed;
-        if (e.key === 's' || e.key === 'S') worldContainer.y -= panSpeed;
-        if (e.key === 'a' || e.key === 'A') worldContainer.x += panSpeed;
-        if (e.key === 'd' || e.key === 'D') worldContainer.x -= panSpeed;
-    });
-
-    document.body.addEventListener('wheel', (e) => {
-        const zoomDelta = e.deltaY > 0 ? 0.9 : 1.1;
-        const newScale = worldContainer.scale.x * zoomDelta;
-        if (newScale >= 0.3 && newScale <= 3.0) {
-            const pointerX = e.clientX; const pointerY = e.clientY;
-            const worldPos = { x: (pointerX - worldContainer.x) / worldContainer.scale.x, y: (pointerY - worldContainer.y) / worldContainer.scale.y };
-            worldContainer.scale.set(newScale, newScale);
-            worldContainer.x = pointerX - worldPos.x * newScale; worldContainer.y = pointerY - worldPos.y * newScale;
+    document.addEventListener('touchend', (e) => {
+        if (e.touches.length === 0 && !isPinching) {
+            isSingleTouchPanning = false;
+            if (longPressTimeout) { clearTimeout(longPressTimeout); longPressTimeout = null; }
+            if (!hasMovedDuringTouch && e.changedTouches.length > 0) {
+                handleTap(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
+            }
+        } else if (e.touches.length < 2) {
+            isPinching = false;
+            if (e.touches.length === 1) touchPanStartPoint = { x: e.touches[0].clientX, y: e.touches[0].clientY };
         }
-    }, {passive: true});
+    });
+
+    const handleTap = (clientX: number, clientY: number) => {
+        document.getElementById('context-menu')!.style.display = 'none';
+        const currentLocal = worldContainer.toLocal({x: clientX, y: clientY} as any);
+        const minX = Math.floor(currentLocal.x / TILE_SIZE);
+        const maxX = minX;
+        const minY = Math.floor(currentLocal.y / TILE_SIZE);
+        const maxY = minY;
+
+        if (currentMode === UIMode.SELECT) {
+            selectedPawnIds.clear();
+            let newlySelected = 0;
+            spriteCache.forEach((wrapper, id) => {
+                if (id < 1000) {
+                    const px = wrapper.x + TILE_SIZE/2; const py = wrapper.y + TILE_SIZE/2;
+                    if (Math.abs(px - currentLocal.x) < TILE_SIZE/2 && Math.abs(py - currentLocal.y) < TILE_SIZE/2) {
+                        selectedPawnIds.add(id);
+                        newlySelected++;
+                    }
+                }
+            });
+            if (selectedPawnIds.size > 0) document.getElementById('pawn-inspect-panel')!.style.display = 'block';
+            else document.getElementById('pawn-inspect-panel')!.style.display = 'none';
+        } else {
+            if (currentMode === UIMode.CHOP_WOOD) engine.command_batch_chop(minX, minY, maxX, maxY);
+            if (currentMode === UIMode.MINE_ROCK) engine.command_batch_mine(minX, minY, maxX, maxY);
+            if (currentMode === UIMode.ZONE_STOCKPILE) engine.command_create_stockpile(minX, minY, maxX, maxY);
+            if (currentMode === UIMode.CANCEL_STOCKPILE) engine.command_cancel_stockpile(minX, minY, maxX, maxY);
+            if (currentMode === UIMode.BUILD_WALL) engine.command_build_wall(minX, minY);
+            setMode(UIMode.SELECT, 'SELECT');
+        }
+    };
+
+    const handleLongPress = (clientX: number, clientY: number) => {
+        if (selectedPawnIds.size === 0 || currentMode !== UIMode.SELECT) return;
+
+        const currentLocal = worldContainer.toLocal({x: clientX, y: clientY} as any);
+        let foundTargetId: number | null = null;
+        let foundTargetType: number | null = null;
+
+        spriteCache.forEach((wrapper, id) => {
+            if (id >= 1000) { // statics
+                const px = wrapper.x + TILE_SIZE/2; const py = wrapper.y + TILE_SIZE/2;
+                if (Math.abs(px - currentLocal.x) < TILE_SIZE && Math.abs(py - currentLocal.y) < TILE_SIZE) {
+                    foundTargetId = id;
+                    foundTargetType = (wrapper as any).staticType;
+                }
+            }
+        });
+
+        if (foundTargetId !== null && foundTargetType !== null) {
+            contextMenuTargetId = foundTargetId;
+            contextMenuForceType = (foundTargetType === 201 || foundTargetType === 205) ? 1 : 
+                                   ((foundTargetType === 202 || foundTargetType === 206) ? 2 : 
+                                   (foundTargetType === 303 ? 3 : 4)); 
+            
+            const menu = document.getElementById('context-menu')!;
+            menu.style.display = 'flex';
+            menu.style.left = clientX + 'px';
+            menu.style.top = clientY + 'px';
+            document.getElementById('ctx-prioritize')!.innerText = `Prioritize ${contextMenuForceType === 1 ? 'Chop' : contextMenuForceType === 2 ? 'Mine' : contextMenuForceType === 3 ? 'Eat' : 'Haul'}`;
+        }
+    };
 
     worldContainer.x = window.innerWidth / 2 - (25 * TILE_SIZE);
     worldContainer.y = window.innerHeight / 2 - (25 * TILE_SIZE);
@@ -399,16 +465,7 @@ const main = async () => {
                     }
                     wrapper.addChild(charContainer);
                     
-                    wrapper.eventMode = 'static';
-                    wrapper.cursor = 'pointer';
-                    wrapper.on('pointerdown', (e) => {
-                        if (e.button === 0 && currentMode === UIMode.SELECT) {
-                            if (!e.shiftKey) selectedPawnIds.clear();
-                            selectedPawnIds.add(id);
-                            document.getElementById('pawn-inspect-panel')!.style.display = 'block';
-                            e.stopPropagation();
-                        }
-                    });
+                    wrapper.eventMode = 'none';
                     
                     const sel = new PIXI.Graphics();
                     sel.lineStyle(2, 0xffffff);
@@ -483,6 +540,7 @@ const main = async () => {
                 let wrapper = spriteCache.get(id);
                 if (!wrapper) {
                     wrapper = new PIXI.Container();
+                    (wrapper as any).staticType = staticType;
                     if (staticType === 201 || staticType === 205) { 
                         let s = new PIXI.Sprite(textures['tree.png'] || PIXI.Texture.WHITE); s.width = TILE_SIZE; s.height = TILE_SIZE; wrapper.addChild(s);
                     } else if (staticType === 202 || staticType === 206) { 
@@ -501,27 +559,6 @@ const main = async () => {
                     indicator.name = "indicator"; indicator.visible = false;
                     indicator.width = TILE_SIZE; indicator.height = TILE_SIZE;
                     wrapper.addChild(indicator);
-
-                    // Setup Right-Click Priority Context Menu Overlay
-                    const ctxHit = new PIXI.Graphics();
-                    ctxHit.beginFill(0xffffff, 0.001); ctxHit.drawRect(0,0,TILE_SIZE,TILE_SIZE); ctxHit.endFill();
-                    ctxHit.eventMode = 'static';
-                    ctxHit.on('pointerdown', (e) => {
-                        if (e.button === 2 && selectedPawnIds.size > 0 && currentMode === UIMode.SELECT) {
-                            contextMenuTargetId = id;
-                            contextMenuForceType = (staticType === 201 || staticType === 205) ? 1 : 
-                                                   ((staticType === 202 || staticType === 206) ? 2 : 
-                                                   (staticType === 303 ? 3 : 4)); 
-                            
-                            const menu = document.getElementById('context-menu')!;
-                            menu.style.display = 'flex';
-                            menu.style.left = e.global.x + 'px';
-                            menu.style.top = e.global.y + 'px';
-                            document.getElementById('ctx-prioritize')!.innerText = `Prioritize ${contextMenuForceType === 1 ? 'Chop' : contextMenuForceType === 2 ? 'Mine' : contextMenuForceType === 3 ? 'Eat' : 'Haul'}`;
-                            e.stopPropagation();
-                        }
-                    });
-                    wrapper.addChild(ctxHit);
 
                     entityLayer.addChild(wrapper);
                     spriteCache.set(id, wrapper);
